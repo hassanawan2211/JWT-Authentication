@@ -1,18 +1,16 @@
 const express = require("express");
 const app = express();
 const mongoose = require("mongoose");
-var bodyParser = require("body-parser");
-var jsonParser = bodyParser.json();
-const crypto = require("crypto");
+const bodyParser = require("body-parser");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
 const User = require("./models/users");
 
-// json web token
+const jsonParser = bodyParser.json();
 
-const jwt = require('jsonwebtoken')
-jwtKey = 'jwt'
+const jwtKey = "jwt";
 
-const key = crypto.randomBytes(32);
-const iv = crypto.randomBytes(16); 
+const saltRounds = 10;
 
 mongoose
   .connect(
@@ -22,34 +20,57 @@ mongoose
     console.log("mongodb connected");
   });
 
-// post user api
-app.post("/register", jsonParser, function (req, res) {
-  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
-  let encrypted = cipher.update(req.body.password, "utf8", "hex");
-  encrypted += cipher.final("hex");
+app.post("/register", jsonParser, async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash(req.body.password, saltRounds);
 
-  console.log("Encrypted Password: ", encrypted);
+    const data = new User({
+      _id: new mongoose.Types.ObjectId(),
+      name: req.body.name,
+      city: req.body.city,
+      email: req.body.email,
+      password: hashedPassword,
+      company: req.body.company,
+    });
 
-  const data = new User({
-    _id: new mongoose.Types.ObjectId(),
-    name: req.body.name,
-    city: req.body.city,
-    email: req.body.email,
-    password: encrypted,
-    company: req.body.company,
-  });
+    const result = await data.save();
 
-  data
-    .save()
-    .then((result) => {
-      jwt.sign({result},jwtKey,{expiresIn:'300s'},(error,token)=>{
-        res.status(201).json({token})
-      })
-      // res.status(201).json(result);
-    })
-    .catch((error) => console.warn(error));
+    jwt.sign({ result }, jwtKey, { expiresIn: "300s" }, (error, token) => {
+      if (error) {
+        return res.status(500).json({ error: "Error generating token" });
+      }
+      res.status(201).json({ token });
+    });
+  } catch (error) {
+    console.warn(error);
+    res.status(500).json({ error: "Error registering user" });
+  }
+});
 
-  // res.end("User registered successfully with encrypted password");
+app.post("/login", jsonParser, async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.body.email });
+
+    if (!user) {
+      return res.status(400).json({ error: "User not found" });
+    }
+
+    const isMatch = await bcrypt.compare(req.body.password, user.password);
+
+    if (isMatch) {
+      jwt.sign({ user }, jwtKey, { expiresIn: "300s" }, (error, token) => {
+        if (error) {
+          return res.status(500).json({ error: "Error generating token" });
+        }
+        res.status(200).json({ message: "Login successful", token });
+      });
+    } else {
+      res.status(401).json({ error: "Invalid password" });
+    }
+  } catch (error) {
+    console.warn(error);
+    res.status(500).json({ error: "Error logging in" });
+  }
 });
 
 app.listen(5000, () => {
