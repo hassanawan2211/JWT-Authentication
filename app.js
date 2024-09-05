@@ -6,6 +6,11 @@ var jsonParser = bodyParser.json();
 const crypto = require("crypto");
 const User = require("./models/users");
 
+// json web token
+
+const jwt = require('jsonwebtoken')
+jwtKey = 'jwt'
+
 const key = crypto.randomBytes(32);
 const iv = crypto.randomBytes(16); 
 
@@ -37,7 +42,10 @@ app.post("/register", jsonParser, function (req, res) {
   data
     .save()
     .then((result) => {
-      res.status(201).json(result);
+      jwt.sign({result},jwtKey,{expiresIn:'300s'},(error,token)=>{
+        res.status(201).json({token})
+      })
+      // res.status(201).json(result);
     })
     .catch((error) => console.warn(error));
 
